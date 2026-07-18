@@ -1,0 +1,22 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "(lldb) Launch",
+            "type": "lldb",
+            "request": "launch",
+            "program": "tagwarp",
+            "args": [],
+            "cwd": "${workspaceFolder}",
+            "env": {
+                "TW_MODS_DIR": "${workspaceFolder}/mods/"
+            },
+            "initCommands": [
+                "settings append target.exec-search-paths ${userHome}/.cache/Crossetta/TagWarp/cachedmods/twnmods/"
+            ],
+            "sourceMap": {
+                "/twws/twnmods/": "${workspaceFolder}/mods/twnmods"
+            }
+        }
+    ]
+}

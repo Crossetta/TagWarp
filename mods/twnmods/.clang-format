@@ -1,0 +1,16 @@
+BraceWrapping:
+  AfterControlStatements: true
+IndentWidth: 4
+ColumnLimit: 120
+
+# If doesn't fit the line, do one per line.
+AlignAfterOpenBracket: AlwaysBreak
+BinPackParameters: OnePerLine
+BinPackArguments: false
+
+AlignConsecutiveDeclarations: true
+AlignConsecutiveAssignments: true
+AlwaysBreakTemplateDeclarations: true
+AllowShortFunctionsOnASingleLine: Empty
+
+OneLineFormatOffRegex: // NOFORMAT
