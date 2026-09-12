@@ -3,7 +3,7 @@
   TagWarp
 </h1>
 
-File tagging software. Native code application for Linux, macOS (not packaged yet) and Windows. Stores tag information in a commonly used open tagging format.
+File tagging software. Native code application for Linux, macOS (not packaged yet) and Windows. Stores tag information in a commonly used open tagging format. Downloads and mods documentation is [here](https://tagwarp.com).
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="assets/TagWarpUI-dark.png">
@@ -45,10 +45,17 @@ Insider Alpha. Discuss in Discord threads, GitHub Discussions and GitHub Issues.
 - Audio thumbnails.
 - Tag disambiguation, aliases and search for a tag by name.
 
+## Tips
+
+- Root is slow to open when cold (~500k files on SSD, ~50k files on HDD)? - Enable caching for that root.
+- Files behave strangely in a root? - Disable caching for that root.
+- Tags behave strangely? - <kbd>Shift</kbd>+<kbd>F5</kbd> to restart.
+- Doesn't start any more? - Backup and clear Crossetta/TagWarp from `~/.config`, `~/.local/share`, `~/.cache` (or `AppData/` and registry on Windows). Tag libraries are in `~/.local/share`, tags may be there too for the roots that are configured that way.
+
 # TagWarp Repository
 
 This repository is the source material for modding.
-Files contain the original implementations that mods can override.
+Files contain the original implementations that mods can override. [Modding documentation.](https://tagwarp.com/doc/modding/current/intro.html)
 
 Tested on Linux and Wine only, not Windows.
 
