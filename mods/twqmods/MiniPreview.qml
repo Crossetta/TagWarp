@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: MIT
 
+import QtMultimedia
 import QtQuick
 import QtQuick.VectorImage
 
@@ -7,12 +8,32 @@ import com.TagWarp.Manager 1.0
 import twqmods 1.0
 import twnmods 1.0
 
+/*!
+    \qmltype MiniPreview
+    \brief A preview that appears inside the entry info pane.
+
+    MiniPreview shows the image or plays the video and has buttons to show a bigger preview.
+
+    Usually appears alongside the entry's details.
+*/
 Item {
     id: root
 
+    /*!
+        \qmlproperty url MiniPreview::entryUrl
+        \brief Path to the file to preview.
+    */
     property url entryUrl
     readonly property url source: previewable.isPreviewable(root.entryUrl) ? root.entryUrl : ""
-    readonly property bool isSvg: root.source.toString().toLowerCase().endsWith(".svg")
+    readonly property bool isSvg: previewable.isSvg(root.source)
+    readonly property bool isGif: previewable.isGif(root.source)
+    readonly property bool isVideo: previewable.isVideo(root.source)
+
+    // Separate sources to not get a warning when going between different types.
+    property url svgSource: isSvg ? source : ""
+    property url gifSource: isGif ? source : ""
+    property url videoSource: isVideo ? source : ""
+    property url rasterSource: isSvg || isGif || isVideo ? "" : source
 
     Previewable {
         id: previewable
@@ -27,7 +48,7 @@ Item {
 
             Image {
                 fillMode: Image.PreserveAspectFit
-                source: root.source
+                source: root.rasterSource
 
                 asynchronous: true
                 smooth: false
@@ -46,7 +67,7 @@ Item {
 
             Image {
                 fillMode: Image.PreserveAspectFit
-                source: root.source
+                source: root.svgSource
 
                 asynchronous: true
                 smooth: false
@@ -88,7 +109,7 @@ Item {
                 y: aspect >= 1.0 ? (width - width / aspect) / 2 : 0
 
                 fillMode: Image.PreserveAspectFit
-                source: root.source
+                source: root.svgSource
 
                 clip: true // Can sometimes render outside like carlitos-Cartoon-Landscape.svg.
 
@@ -96,6 +117,46 @@ Item {
             }
         }
 
-        sourceComponent: root.isSvg ? Diagnostics.rasterizeSvg ? rasterizedSvgImage : vectorImage : rasterImage
+        Component {
+            id: animatedImage
+
+            AnimatedImage {
+                fillMode: Image.PreserveAspectFit
+                source: root.gifSource
+
+                asynchronous: true
+                smooth: false
+
+                DelayedBusyIndicator {
+                    anchors.fill: parent
+                    opacity: 0.3
+                    loading: parent.status === Image.Loading
+                }
+            }
+        }
+
+        Component {
+            id: video
+
+            VideoOutput {
+                id: videoOutput
+                MediaPlayer {
+                    source: root.videoSource
+                    videoOutput: videoOutput
+                    autoPlay: true
+                    loops: MediaPlayer.Infinite
+                }
+            }
+        }
+
+        sourceComponent: if (root.isSvg) {
+            return Diagnostics.rasterizeSvg ? rasterizedSvgImage : vectorImage;
+        } else if (root.isGif) {
+            return animatedImage;
+        } else if (root.isVideo) {
+            return video;
+        } else {
+            return rasterImage;
+        }
     }
 }

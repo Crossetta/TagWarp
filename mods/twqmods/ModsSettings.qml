@@ -10,15 +10,25 @@ import com.TagWarp.Manager 1.0
 import twqmods 1.0
 import twnmods 1.0
 
+/*!
+    \qmltype ModsSettings
+    \brief Settings tab for the mods builder.
+*/
 ColumnLayout {
     id: root
 
+    /*!
+        \qmlsignal ModsSettings::close()
+        \brief Emitted to close the whole settings window.
+    */
     signal close
 
     spacing: 0
 
     GroupBox {
         Layout.fillWidth: true
+        Layout.fillHeight: true
+        Layout.alignment: Qt.AlignTop
 
         label: CheckBox {
             id: checkBox
@@ -73,6 +83,8 @@ ColumnLayout {
 
     RowLayout {
         Layout.fillWidth: true
+        Layout.fillHeight: true
+        Layout.alignment: Qt.AlignBottom
 
         spacing: 0
 

@@ -1,5 +1,13 @@
 // SPDX-License-Identifier: MIT
 
+/*!
+    \brief Mods builder.
+
+    Functions that the application uses to build the mods.
+
+    They pull a docker image with the build environment, generate build files and rebuild the mods.
+*/
+
 #include <QCoreApplication>
 #include <QDebug>
 #include <QProcessEnvironment>
@@ -14,6 +22,8 @@
 #include "tweadjustpathsfordocker.h"
 #include "tweerrorcheckutilslibc.h"
 #include "tweexports.h"
+
+#define TW_MAX_MOD_BUILD_OUTPUT_LEN 8192
 
 #define STR_HELPER(x) #x
 #define STR(x) STR_HELPER(x)
@@ -104,7 +114,7 @@ static void writeCmakeFile(
         // clang-format off
         cmakeTemplate = "cmake_minimum_required(VERSION 3.16)\n"
                         "project(twnmods VERSION 1.0 LANGUAGES C CXX)\n"
-                        "find_package(Qt6 REQUIRED COMPONENTS Concurrent Core Qml Svg)\n"
+                        "find_package(Qt6 REQUIRED COMPONENTS Concurrent Core Multimedia Qml Svg)\n"
                         "qt_standard_project_setup(REQUIRES 6.5)\n"
                         "set(CMAKE_C_STANDARD 23)\n"
                         "set(CMAKE_CXX_STANDARD 17)\n"
@@ -124,6 +134,7 @@ static void writeCmakeFile(
                         "target_link_libraries(${PROJECT_NAME} PRIVATE\n"
                         "    Qt6::Concurrent\n"
                         "    Qt6::Core\n"
+                        "    Qt6::Multimedia\n"
                         "    Qt6::Svg\n"
                         ")\n"
                         "target_link_directories(${PROJECT_NAME} PRIVATE\n"
@@ -161,6 +172,10 @@ struct TWModsBuildResult {
     bool    success;
 };
 
+/*!
+    \class TWModsBuilder
+    \brief Internal struct to store the state of the mods builder.
+*/
 struct TWModsBuilder {
     QString cachedModsDir;
     QString builtTWNModsDir; // Empty means no nmods to load.
@@ -176,17 +191,42 @@ struct TWModsBuilder {
     QFuture<TWModsBuildResult> result;
 };
 
+static void copyPath(const QString &path, char buffer[PATH_MAX], char **err) {
+    QByteArray pathAsUtf8(path.toUtf8());
+    size_t     copySize = pathAsUtf8.size();
+    EB_ERR_GF(copySize < PATH_MAX, "Dir path is too long");
+    memcpy(buffer, pathAsUtf8.constData(), copySize);
+    buffer[copySize] = '\0';
+fail:;
+}
+
+static void copyOutput(const QString &output, char buffer[TW_MAX_MOD_BUILD_OUTPUT_LEN], char **err) {
+    QByteArray outputAsUtf8(output.toUtf8());
+    size_t     copySize = outputAsUtf8.size();
+    EB_ERR_GF(copySize < TW_MAX_MOD_BUILD_OUTPUT_LEN, "Build output is too long");
+    memcpy(buffer, outputAsUtf8.constData(), copySize);
+    buffer[copySize] = '\0';
+fail:;
+}
+
 #ifdef __cplusplus
 extern "C" {
 #endif
 
-thread_local static QByteArray modsDirBuffer;
+thread_local static char modsDirBuffer[PATH_MAX];
 
+/*!
+    \fn const char *twModsGetDir()
+    \brief Returns the mods directory path from the configuration settings or the TW_MODS_DIR env var.
+
+    The mods directory is the directory that may contain \e twnmods/ and \e twqmods/ directories with the source
+    files for native mods and QML mods respectively.
+*/
 TW_EXPORT const char *twModsGetDir() {
     QSettings settings;
     if (!settings.value("mods/enabled", false).toBool()) {
-        modsDirBuffer.clear();
-        return modsDirBuffer.constData();
+        modsDirBuffer[0] = '\0';
+        return modsDirBuffer;
     }
 
     QString modsDir;
@@ -197,12 +237,17 @@ TW_EXPORT const char *twModsGetDir() {
     }
 
     if (modsDir.isEmpty()) {
-        modsDirBuffer.clear();
+        modsDirBuffer[0] = '\0';
     } else {
-        modsDirBuffer = QDir(modsDir).canonicalPath().toUtf8();
+        char *err = nullptr;
+        copyPath(QDir(modsDir).canonicalPath(), modsDirBuffer, &err);
+        if (err) {
+            qWarning() << *err;
+            modsDirBuffer[0] = '\0';
+        }
     }
 
-    return modsDirBuffer.constData();
+    return modsDirBuffer;
 }
 
 static QString adjustPathForDocker(const QString &path, char **err) {
@@ -215,6 +260,14 @@ static QString adjustPathForDocker(const QString &path, char **err) {
     return path;
 }
 
+/*!
+    \fn TWModsBuilder *twModsBuilderCreate(char **err)
+    \brief Starts a mods builder.
+
+    May fail and set the \a err due to permission or memory errors.
+
+    \sa twModsBuilderDestroy()
+*/
 TW_EXPORT TWModsBuilder *twModsBuilderCreate(char **err) {
     std::unique_ptr<TWModsBuilder> builder(std::make_unique<TWModsBuilder>());
 
@@ -483,6 +536,14 @@ static void buildCopyForCurrentPlatform(TWModsBuilder *builder, char **err) {
 fail:;
 }
 
+/*!
+    \fn void twModsBuilderBuild(TWModsBuilder *builder, char **err)
+    \brief Starts building mods using the \a builder.
+
+    May fail and set the \a err due to permission or memory errors.
+
+    \sa twModsBuilderWaitResult()
+*/
 TW_EXPORT void twModsBuilderBuild(TWModsBuilder *builder, char **err) {
     if (!builder) {
         return;
@@ -491,10 +552,27 @@ TW_EXPORT void twModsBuilderBuild(TWModsBuilder *builder, char **err) {
     buildCopyForCurrentPlatform(builder, err);
 }
 
-thread_local static QByteArray cachedModsDirBuffer;
-thread_local static QByteArray builtTWNModsDirBuffer;
-thread_local static QByteArray outputBuffer;
+thread_local static char cachedModsDirBuffer[PATH_MAX];
+thread_local static char builtTWNModsDirBuffer[PATH_MAX];
+thread_local static char outputBuffer[TW_MAX_MOD_BUILD_OUTPUT_LEN];
 
+/*!
+    \fn void twModsBuilderWaitResult(TWModsBuilder *builder, const char **cachedModsDir, const char **builtTWNModsDir,
+   const char **output, char **err)
+    \brief Waits for the mods builder \a builder to finish building.
+
+    May fail and set the \a err. Failing to build also sets the \a err.
+
+    The \a output is set to something even in the case of any error. The build log is copied into the \a output.
+
+    Sets \a cachedModsDir - the path that the main application will add to QQmlEngine::importPathList to load the mod
+    as a QML module.
+
+    Sets \a builtTWNModsDir. The \a builtTWNModsDir is normally a directory inside the \a cachedModsDir.
+
+    The \a builtTWNModsDir contains the built mod's loadable library that the main application will load as a dynamic
+   library and will import known functions from it (functions like this one).
+*/
 TW_EXPORT void twModsBuilderWaitResult(
     TWModsBuilder *builder, const char **cachedModsDir, const char **builtTWNModsDir, const char **output, char **err) {
 
@@ -506,19 +584,27 @@ TW_EXPORT void twModsBuilderWaitResult(
         return;
     }
 
-    *cachedModsDir   = (cachedModsDirBuffer = builder->cachedModsDir.toUtf8()).constData();
-    *builtTWNModsDir = (builtTWNModsDirBuffer = builder->builtTWNModsDir.toUtf8()).constData();
+    TWModsBuildResult result;
+
+    copyPath(builder->cachedModsDir, cachedModsDirBuffer, err);
+    EB_GF(!*err);
+    copyPath(builder->builtTWNModsDir, builtTWNModsDirBuffer, err);
+    EB_GF(!*err);
+
+    *cachedModsDir   = cachedModsDirBuffer;
+    *builtTWNModsDir = builtTWNModsDirBuffer;
 
     if (!builder->result.isValid()) { // There was no build because of the mtime comparison.
-        outputBuffer.clear();
-        *output = outputBuffer.constData();
+        outputBuffer[0] = '\0';
+        *output         = outputBuffer;
         qInfo() << "No build needed for twnmods.";
         return;
     }
 
-    TWModsBuildResult result = builder->result.takeResult();
-    outputBuffer             = result.output.toUtf8();
-    *output                  = outputBuffer.constData();
+    result = builder->result.takeResult();
+    copyOutput(result.output, outputBuffer, err);
+    EB_GF(!*err);
+    *output = outputBuffer;
 
     EB_ERR_GF(result.error.isEmpty(), "Failed to build twnmods: %s", result.error.toUtf8().constData());
     EB_ERR_GF(result.success, "Failed to build twnmods");
@@ -534,6 +620,10 @@ TW_EXPORT void twModsBuilderWaitResult(
 fail:;
 }
 
+/*!
+    \fn void twModsBuilderDestroy(TWModsBuilder *builder)
+    \brief Stops the mods builder \a builder.
+*/
 TW_EXPORT void twModsBuilderDestroy(TWModsBuilder *builder) {
     std::unique_ptr<TWModsBuilder> builderPtr(builder);
 }

@@ -28,25 +28,22 @@ Insider Alpha. Discuss in Discord threads, GitHub Discussions and GitHub Issues.
 ### Implemented
 
 - File tagging with some simple undo/redo and navigation history.
-- Parent tags.
-- Search by tags and names.
+- Parent tags, categories.
+- Search by tags and file names.
+- Usual file operations like in a file manager.
 - Fullscreen preview.
 - Multiple tag libraries.
 - Multiple locations with multiple roots per location.
 - Multiple windows and tabs, command palette.
 - Several storage options for the tags: centralized, distributed, consolidated.
-- Image thumbnails and multiple storage options for the thumbnails.
+- Hiding and blurring thumbnails.
+- File preview support status: images and video.
 - QML and native modding systems.
 
 ### In the Implementation Phase
 
-- Video thumbnails.
 - Audio thumbnails.
-
-### In the Design Phase
-
-- Tag disambiguation, aliases, categories and search for tags.
-- Hidden files.
+- Tag disambiguation, aliases and search for a tag by name.
 
 # TagWarp Repository
 
@@ -67,5 +64,6 @@ Setting up mods path to load the mods:
 Mods:
 
 - `Shortcuts.qml` - keybindings.
+- `Preview.qml`, `MiniPreview.qml` - viewing file contents inside TagWarp.
 - `mods.cpp` - mod builder.
 - `thumbnailerwork.cpp` - thumbnail worker.

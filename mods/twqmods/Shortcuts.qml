@@ -6,6 +6,10 @@ import com.TagWarp.Manager 1.0
 import twqmods 1.0
 import twnmods 1.0
 
+/*!
+    \qmltype Shortcuts
+    \brief Hotkeys for the actions.
+*/
 ShortcutsWithAltDetectionAndText {
     id: root
 

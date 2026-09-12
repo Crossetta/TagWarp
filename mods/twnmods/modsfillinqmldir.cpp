@@ -9,10 +9,24 @@
 #include <QStringList>
 #include <QTextStream>
 
+/*!
+    \brief Utility functions for qmldir.
+
+    Functions to prepare a QML module.
+*/
+
 #ifdef __cplusplus
 extern "C" {
 #endif
 
+/*!
+    \fn void twModsFillInQmldir(const char *path)
+    \brief Generates qmldir file in \a path from the file names present in that directory.
+
+    Doesn't overwrite the file if it's identical.
+
+    If there is a qmldir file, then takes the first encountered version number, else uses 1.0.
+*/
 TW_EXPORT void twModsFillInQmldir(const char *path) {
     QDir          importDir(path);
     QDir          dir(importDir.filePath("twqmods"));
