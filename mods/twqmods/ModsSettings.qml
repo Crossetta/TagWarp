@@ -13,6 +13,8 @@ import twnmods 1.0
 /*!
     \qmltype ModsSettings
     \brief Settings tab for the mods builder.
+
+    Used in the settings window.
 */
 ColumnLayout {
     id: root
@@ -133,7 +135,7 @@ ColumnLayout {
         }
     }
 
-    Settings {
+    SettingsAtOverriddenPath {
         id: settings
         category: "mods"
         property bool enabled

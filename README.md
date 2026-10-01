@@ -28,8 +28,9 @@ Insider Alpha. Discuss in Discord threads, GitHub Discussions and GitHub Issues.
 ### Implemented
 
 - File tagging with some simple undo/redo and navigation history.
-- Parent tags, categories.
+- Parent tags, categories, disambiguation, aliases.
 - Search by tags and file names.
+- Picking tags by their titles or aliases.
 - Usual file operations like in a file manager.
 - Fullscreen preview.
 - Multiple tag libraries.
@@ -37,13 +38,13 @@ Insider Alpha. Discuss in Discord threads, GitHub Discussions and GitHub Issues.
 - Multiple windows and tabs, command palette.
 - Several storage options for the tags: centralized, distributed, consolidated.
 - Hiding and blurring thumbnails.
-- File preview support status: images and video.
+- File preview support status: images, video, audio cover art.
 - QML and native modding systems.
 
 ### In the Implementation Phase
 
-- Audio thumbnails.
-- Tag disambiguation, aliases and search for a tag by name.
+- Interactivity polishing pass.
+- PDF thumbnails.
 
 ## Tips
 

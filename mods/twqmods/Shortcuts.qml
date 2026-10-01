@@ -9,6 +9,8 @@ import twnmods 1.0
 /*!
     \qmltype Shortcuts
     \brief Hotkeys for the actions.
+
+    This type defines the keybindings.
 */
 ShortcutsWithAltDetectionAndText {
     id: root
@@ -83,6 +85,10 @@ ShortcutsWithAltDetectionAndText {
         {
             action: window.actionFind,
             sequences: [StandardKey.Find]
+        },
+        {
+            action: window.actionFindTag,
+            sequences: ["Ctrl+Shift+F"]
         },
         {
             action: window.actionApplyTags,

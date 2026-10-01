@@ -36,7 +36,7 @@ Rectangle {
         \qmlsignal Preview::setMeta(string key, var value)
         \brief Sets entry's metadata \a key to \a value.
 
-        Used for adjusting the thumbnail by setting \e frameNumForThumb to the desirable frame of the video for example.
+        Used for adjusting the thumbnail by setting \c frameNumForThumb to the desirable frame of the video for example.
     */
     signal setMeta(key: string, value: var)
 
@@ -50,18 +50,37 @@ Rectangle {
         loader.item.y = (root.height - loader.item.height * loader.item.scale) / 2;
     }
 
+    // Formats millisecond duration into HH:MM:SS or MM:SS
+    function formatTime(ms) {
+        if (isNaN(ms) || ms < 0) return "00:00";
+        let totalSeconds = Math.floor(ms / 1000);
+        let hours = Math.floor(totalSeconds / 3600);
+        let minutes = Math.floor((totalSeconds % 3600) / 60);
+        let seconds = totalSeconds % 60;
+
+        let minStr = minutes.toString().padStart(2, '0');
+        let secStr = seconds.toString().padStart(2, '0');
+
+        if (hours > 0) {
+            return hours + ":" + minStr + ":" + secStr;
+        }
+        return minStr + ":" + secStr;
+    }
+
     color: root.palette.window
 
     property url source: previewable.isPreviewable(entryUrl) ? entryUrl : ""
     property bool isSvg: previewable.isSvg(source)
     property bool isGif: previewable.isGif(source)
     property bool isVideo: previewable.isVideo(source)
+    property bool isAudio: previewable.isAudio(source)
 
     // Separate sources to not get a warning when going between different types.
     property url svgSource: isSvg ? source : ""
     property url gifSource: isGif ? source : ""
     property url videoSource: isVideo ? source : ""
-    property url rasterSource: isSvg || isGif || isVideo ? "" : source
+    property url audioSource: isAudio ? source : ""
+    property url rasterSource: isSvg || isGif || isVideo || isAudio ? "" : source
 
     Previewable {
         id: previewable
@@ -104,7 +123,7 @@ Rectangle {
         Binding {
             target: loader.item
             property: "scale"
-            value: loader.item && loader.item.width != 0 && loader.item.height != 0 ? Math.min(root.width / loader.item.width, root.height / loader.item.height) + loader.zoom : 1.0
+            value: loader.item && loader.item.width !== 0 && loader.item.height !== 0 ? Math.min(root.width / loader.item.width, root.height / loader.item.height) + loader.zoom : 1.0
         }
 
         Connections { // Center it when the window is resized and the image is small.
@@ -125,39 +144,80 @@ Rectangle {
             target: loader.item
 
             function onXChanged() {
-                loader.saveToTransformCache();
+                loader.saveGeometryToTransformCache();
             }
 
             function onYChanged() {
-                loader.saveToTransformCache();
+                loader.saveGeometryToTransformCache();
             }
         }
 
-        onZoomChanged: saveToTransformCache()
+        onZoomChanged: saveGeometryToTransformCache()
 
-        function saveToTransformCache() {
-            if (loader.syncedToTransformCache) {
-                loader.transformCache[loader.item.source] = {
-                    zoom: loader.zoom,
-                    x: loader.item.x,
-                    y: loader.item.y
-                };
+        function saveGeometryToTransformCache() {
+            if (loader.syncedToTransformCache && loader.item && loader.item.cacheId) {
+                let cache = loader.transformCache;
+                let data = cache[loader.item.source] || {};
+                data.zoom = loader.zoom;
+                data.x = loader.item.x;
+                data.y = loader.item.y;
+                cache[loader.item.cacheId] = data;
+                loader.transformCache = cache;
             }
         }
 
-        function restoreFromTransformCache() {
+        function saveMediaCtlsToTransformCache(volume, position, paused) {
+            if (loader.syncedToTransformCache && loader.item && loader.item.cacheId) {
+                let cache = loader.transformCache;
+                let data = cache[loader.item.cacheId] || {};
+                if (volume !== undefined) data.volume = volume;
+                if (position !== undefined) data.position = position;
+                if (paused !== undefined) data.paused = paused;
+                cache[loader.item.cacheId] = data;
+                loader.transformCache = cache;
+            }
+        }
+
+        function restoreGeometryFromTransformCache() {
             if (!item) {
                 return;
             }
             syncedToTransformCache = false;
-            if (transformCache[item.source]) {
-                zoom = transformCache[item.source].zoom;
-                item.x = transformCache[item.source].x;
-                item.y = transformCache[item.source].y;
+            if (transformCache[item.cacheId]) {
+                zoom = transformCache[item.cacheId].zoom;
+                item.x = transformCache[item.cacheId].x;
+                item.y = transformCache[item.cacheId].y;
             } else {
                 zoom = 0;
                 item.x = (root.width - item.width * item.scale) / 2;
                 item.y = (root.height - item.height * item.scale) / 2;
+            }
+            syncedToTransformCache = true;
+        }
+
+        function restoreMediaCtlsFromTransformCache() {
+            if (!item) {
+                return;
+            }
+            syncedToTransformCache = false;
+            let cacheData = transformCache[item.cacheId];
+
+            if (!cacheData && item.player && item.player.audioOutput) {
+                item.player.audioOutput.volume = GlobalState.defaultAudioVolume
+            }
+
+            if (cacheData && item.player) {
+                if (cacheData.volume !== undefined && item.player.audioOutput) {
+                    item.player.audioOutput.volume = cacheData.volume;
+                }
+                if (cacheData.position !== undefined) {
+                    item.player.position = cacheData.position;
+                }
+                if (cacheData.paused) {
+                    item.player.pause();
+                } else {
+                    item.player.play();
+                }
             }
             syncedToTransformCache = true;
         }
@@ -167,10 +227,11 @@ Rectangle {
 
             Image {
                 source: root.rasterSource
+                property string cacheId: source
                 asynchronous: true
                 onStatusChanged: (status)=> {
-                    if (status == Image.Ready) {
-                        loader.restoreFromTransformCache();
+                    if (status === Image.Ready) {
+                        loader.restoreGeometryFromTransformCache();
                     }
                 }
             }
@@ -182,17 +243,18 @@ Rectangle {
 
             Image {
                 source: root.source
+                property string cacheId: source
                 asynchronous: true
                 onStatusChanged: (status)=> {
-                    if (status == Image.Ready) {
-                        loader.restoreFromTransformCache();
+                    if (status === Image.Ready) {
+                        loader.restoreGeometryFromTransformCache();
                     }
                 }
 
                 // SVG clarity hack (https://forum.qt.io/topic/52161/properly-scaling-svg-images).
                 sourceSize: root.isSvg && svgHackLoader.item
                             ? Qt.size(svgHackLoader.item.sourceSize.width * 4,
-                                    svgHackLoader.item.sourceSize.height * 4)
+                                      svgHackLoader.item.sourceSize.height * 4)
                             : undefined
 
                 Loader {
@@ -213,7 +275,8 @@ Rectangle {
 
             VectorImage {
                 source: root.svgSource
-                onSourceChanged: loader.restoreFromTransformCache()
+                property string cacheId: source
+                onSourceChanged: loader.restoreGeometryFromTransformCache()
             }
         }
 
@@ -222,10 +285,11 @@ Rectangle {
 
             AnimatedImage {
                 source: root.gifSource
+                property string cacheId: source
                 asynchronous: true
                 onStatusChanged: (status)=> {
-                    if (status == Image.Ready) {
-                        loader.restoreFromTransformCache();
+                    if (status === Image.Ready) {
+                        loader.restoreGeometryFromTransformCache();
                     }
                 }
             }
@@ -237,22 +301,86 @@ Rectangle {
             VideoOutput {
                 id: videoOutput
 
-                property url source: root.videoSource // For the TransformCache.
-                property bool firstRender
-                function onFirstRender() {
-                    if (!firstRender && width && height) {
-                        firstRender = false;
-                        loader.restoreFromTransformCache();
+                property string source: root.videoSource // So the fallback icon doesn't appear.
+                property string cacheId: source
+                property bool initialRenderDone
+                property bool initialPlaybackDone
+
+                function checkReady() {
+                    if (!initialRenderDone && width && height) {
+                        initialRenderDone = true;
+                        loader.restoreGeometryFromTransformCache();
+                    }
+
+                    if (!initialPlaybackDone && player.mediaStatus === MediaPlayer.LoadedMedia) {
+                        initialPlaybackDone = true;
+                        loader.restoreMediaCtlsFromTransformCache()
                     }
                 }
-                onWidthChanged: onFirstRender()
-                onHeightChanged: onFirstRender()
+
+                onWidthChanged: checkReady()
+                onHeightChanged: checkReady()
 
                 property MediaPlayer player: MediaPlayer {
                     source: root.videoSource
                     videoOutput: videoOutput
+                    audioOutput: AudioOutput {}
                     autoPlay: true
                     loops: MediaPlayer.Infinite
+                }
+
+                Connections {
+                    target: videoOutput.player
+                    function onMediaStatusChanged() { videoOutput.checkReady(); }
+                }
+            }
+        }
+
+        Component {
+            id: audio
+
+            Image {
+                id: audioItem
+
+                property string cacheId: root.audioSource
+                property bool isGeometryLoaded
+                property bool isMediaCtlsLoaded
+
+                property MediaPlayer player: MediaPlayer {
+                    source: root.audioSource
+                    audioOutput: AudioOutput {}
+                    autoPlay: true
+                    loops: MediaPlayer.Infinite
+                    onMediaStatusChanged: audioItem.checkReady()
+                }
+
+                source: {
+                    if (!player || !player.metaData) {
+                        return "";
+                    }
+                    return ImageFuncs.toDataUri(player.metaData.value(MediaMetaData.CoverArtImage) || player.metaData.value(MediaMetaData.ThumbnailImage));
+                }
+
+                asynchronous: true
+
+                function checkReady() {
+                    if (!isGeometryLoaded && (status === Image.Ready || status === Image.Error)) {
+                        isGeometryLoaded = true;
+                        loader.restoreGeometryFromTransformCache();
+                    }
+                    if (!isMediaCtlsLoaded && player.mediaStatus === MediaPlayer.LoadedMedia) {
+                        isMediaCtlsLoaded = true;
+                        loader.restoreMediaCtlsFromTransformCache();
+                    }
+                }
+
+                onStatusChanged: checkReady()
+
+                Connections {
+                    target: audioItem.player
+                    function onMediaStatusChanged() {
+                        audioItem.checkReady();
+                    }
                 }
             }
         }
@@ -263,9 +391,19 @@ Rectangle {
             return animatedImage;
         } else if (root.isVideo) {
             return video;
+        } else if (root.isAudio) {
+            return audio;
         } else {
             return rasterImage;
         }
+    }
+
+    VectorImage {
+        visible: loader.item?.source.toString() === ""
+        anchors.centerIn: parent
+        width: mediaControlsPanel.iconSize * 4
+        height: mediaControlsPanel.iconSize * 4
+        source: Themed.getIcon(root, "audio-x-generic")
     }
 
     Item {
@@ -284,7 +422,7 @@ Rectangle {
 
             property int iconSize: 48
 
-            state: ((loader.sourceComponent === animatedImage || loader.sourceComponent === video) && mediaControlsHover.hovered) ? "Visible" : "Invisible"
+            state: ((loader.sourceComponent === animatedImage || loader.sourceComponent === video || loader.sourceComponent === audio) && mediaControlsHover.hovered) ? "Visible" : "Invisible"
 
             states: [
                 State{
@@ -311,7 +449,10 @@ Rectangle {
                 Transition {
                     from: "Visible"
                     to: "Invisible"
-                    SequentialAnimation{
+                    SequentialAnimation {
+                        PropertyAnimation {
+                            duration: 1000
+                        }
                         NumberAnimation {
                             target: mediaControlsPanel
                             property: "opacity"
@@ -328,7 +469,7 @@ Rectangle {
                 Transition {
                     from: "Invisible"
                     to: "Visible"
-                    SequentialAnimation{
+                    SequentialAnimation {
                         NumberAnimation {
                             target: mediaControlsPanel
                             property: "visible"
@@ -403,28 +544,87 @@ Rectangle {
             }
 
             Component {
-                id: videoControlsComponent
+                id: mediaControlsComponent
 
                 Item {
+                    id: mediaControlsRoot
+
+                    // To simplify TransformCache functions, the controls are outside of the rendering components.
+                    // But it causes some interference during transitions.
+                    property MediaPlayer player: loader.item?.player ?? null
+
+                    property real videoFps: {
+                        let fps = player ? player.metaData.value(MediaMetaData.VideoFrameRate) : 0;
+                        return fps > 0 ? fps : 30.0;
+                    }
+
+                    property real msPerFrame: 1000.0 / videoFps
+                    property int currentFrame: player ? Math.floor(player.position / msPerFrame) : 0;
+
+                    // Left Side: Volume & Timeline Row.
                     Row {
-                        id: videoControls
+                        id: audioInfoRow
+                        anchors.left: parent.left
+                        anchors.bottom: mediaControls.bottom
+                        spacing: 8
 
-                        // To simplify TransformCache functions, the controls are outside of the rendering components.
-                        // But it causes some interference during transitions.
-                        property MediaPlayer player: loader.item?.player ?? null
+                        Row {
+                            ToolButton {
+                                width: mediaControlsPanel.iconSize * 0.75
+                                height: mediaControlsPanel.iconSize * 0.75
+                                anchors.verticalCenter: parent.verticalCenter
+                                icon.source: {
+                                    if (mediaControlsRoot.player && mediaControlsRoot.player.audioOutput) {
+                                        return Themed.getIcon(root, mediaControlsRoot.player.audioOutput.muted || mediaControlsRoot.player.audioOutput.volume === 0 ? "audio-volume-muted" : "player-volume");
+                                    }
+                                    return Themed.getIcon(root, "player-volume");
+                                }
+                                ToolTip.visible: hovered
+                                ToolTip.text: qsTr("Mute")
+                                ToolTip.delay: 500
+                                display: AbstractButton.IconOnly
+                                onClicked: {
+                                    if (mediaControlsRoot.player && mediaControlsRoot.player.audioOutput) {
+                                        mediaControlsRoot.player.audioOutput.muted = !mediaControlsRoot.player.audioOutput.muted;
+                                    }
+                                }
+                            }
 
-                        property real videoFps: {
-                            let fps = player ? player.metaData.value(MediaMetaData.VideoFrameRate) : 0;
-                            return fps > 0 ? fps : 30.0; // Default to 30 if undefined
+                            Slider {
+                                id: volumeSlider
+                                width: 100
+                                anchors.verticalCenter: parent.verticalCenter
+                                value: mediaControlsRoot.player && mediaControlsRoot.player.audioOutput ? mediaControlsRoot.player.audioOutput.volume : GlobalState.defaultAudioVolume // Not necessairly the initial value. It may be set in the cache load.
+                                onMoved: {
+                                    if (mediaControlsRoot.player && mediaControlsRoot.player.audioOutput) {
+                                        mediaControlsRoot.player.audioOutput.volume = value;
+                                        mediaControlsRoot.player.audioOutput.muted = false;
+                                        loader.saveMediaCtlsToTransformCache(value, undefined, undefined);
+                                    }
+                                }
+                            }
                         }
 
-                        property real msPerFrame: 1000.0 / videoFps
-                        property int currentFrame: player ? Math.floor(player.position / msPerFrame) : 0;
+                        Text {
+                            anchors.verticalCenter: parent.verticalCenter
+                            color: root.palette.windowText
+                            text: {
+                                if (!mediaControlsRoot.player) {
+                                    return "00:00 / 00:00";
+                                }
+                                return root.formatTime(mediaControlsRoot.player.position) + " / " + root.formatTime(mediaControlsRoot.player.duration);
+                            }
+                        }
+                    }
 
-                        anchors.top: parent.top
+                    // Middle: Playback controls.
+                    Row {
+                        id: mediaControls
+
                         anchors.horizontalCenter: parent.horizontalCenter
 
                         ToolButton {
+                            visible: root.isVideo
                             width: mediaControlsPanel.iconSize
                             height: mediaControlsPanel.iconSize
                             icon.source: Themed.getIcon(root, "go-previous")
@@ -433,30 +633,34 @@ Rectangle {
                             ToolTip.delay: 500
                             display: AbstractButton.IconOnly
                             onClicked: {
-                                videoControls.player.pause()
-                                videoControls.player.position = Math.max(0, videoControls.player.position - videoControls.msPerFrame)
+                                mediaControlsRoot.player.pause()
+                                mediaControlsRoot.player.position = Math.max(0, mediaControlsRoot.player.position - mediaControlsRoot.msPerFrame)
+                                loader.saveMediaCtlsToTransformCache(undefined, mediaControlsRoot.player.position, true)
                             }
                         }
 
                         ToolButton {
-                            property bool isPlaying: videoControls.player ? videoControls.player.playbackState === MediaPlayer.PlayingState : false
+                            property bool isPlaying: mediaControlsRoot.player ? mediaControlsRoot.player.playbackState === MediaPlayer.PlayingState : false
 
                             width: mediaControlsPanel.iconSize
                             height: mediaControlsPanel.iconSize
-                            icon.source: Themed.getIcon(root, videoControls.visible && isPlaying ? "media-playback-pause" : "media-playback-start")
+                            icon.source: Themed.getIcon(root, mediaControls.visible && isPlaying ? "media-playback-pause" : "media-playback-start")
                             ToolTip.visible: hovered
-                            ToolTip.text: qsTr(videoControls.visible && isPlaying ? "Pause" : "Play")
+                            ToolTip.text: qsTr(mediaControls.visible && isPlaying ? "Pause" : "Play")
                             ToolTip.delay: 500
                             onClicked: {
                                 if (isPlaying) {
-                                    videoControls.player.pause()
+                                    mediaControlsRoot.player.pause()
+                                    loader.saveMediaCtlsToTransformCache(undefined, mediaControlsRoot.player.position, true)
                                 } else {
-                                    videoControls.player.play()
+                                    mediaControlsRoot.player.play()
+                                    loader.saveMediaCtlsToTransformCache(undefined, undefined, false)
                                 }
                             }
                         }
 
                         ToolButton {
+                            visible: root.isVideo
                             width: mediaControlsPanel.iconSize
                             height: mediaControlsPanel.iconSize
                             icon.source: Themed.getIcon(root, "go-next")
@@ -465,15 +669,17 @@ Rectangle {
                             ToolTip.delay: 500
                             display: AbstractButton.IconOnly
                             onClicked: {
-                                videoControls.player.pause()
-                                videoControls.player.position = Math.min(videoControls.player.duration, videoControls.player.position + videoControls.msPerFrame)
+                                mediaControlsRoot.player.pause()
+                                mediaControlsRoot.player.position = Math.min(mediaControlsRoot.player.duration, mediaControlsRoot.player.position + mediaControlsRoot.msPerFrame)
+                                loader.saveMediaCtlsToTransformCache(undefined, mediaControlsRoot.player.position, true)
                             }
                         }
                     }
 
                     ToolButton {
-                        anchors.bottom: videoControls.bottom
-                        anchors.left: videoControls.right
+                        visible: root.isVideo
+                        anchors.bottom: mediaControls.bottom
+                        anchors.left: mediaControls.right
                         anchors.leftMargin: width
 
                         width: mediaControlsPanel.iconSize
@@ -483,10 +689,11 @@ Rectangle {
                         ToolTip.text: qsTr("Set this frame as a thumbnail")
                         ToolTip.delay: 500
                         display: AbstractButton.IconOnly
-                        onClicked: root.setMeta("frameNumForThumb", videoControls.currentFrame)
+                        onClicked: root.setMeta("frameNumForThumb", mediaControlsRoot.currentFrame)
                     }
 
                     Slider {
+                        id: seekSlider
                         anchors.bottom: parent.bottom
                         anchors.left: parent.left
                         anchors.right: parent.right
@@ -494,17 +701,23 @@ Rectangle {
                         anchors.rightMargin: 20
 
                         from: 0
-                        to: videoControls.player && videoControls.player.duration > 0 ? videoControls.player.duration : 1
+                        to: mediaControlsRoot.player && mediaControlsRoot.player.duration > 0 ? mediaControlsRoot.player.duration : 1
 
-                        value: videoControls.player ? videoControls.player.position : 0
-                        onMoved: videoControls.player.position = value
+                        value: mediaControlsRoot.player ? mediaControlsRoot.player.position : 0
+                        onMoved: {
+                            if (mediaControlsRoot.player) {
+                                mediaControlsRoot.player.position = value
+                                loader.saveMediaCtlsToTransformCache(undefined, value, undefined)
+                            }
+                        }
                     }
                 }
             }
 
             Loader {
                 anchors.fill: parent
-                sourceComponent: loader.sourceComponent === animatedImage ? animationControlsComponent : loader.sourceComponent === video ? videoControlsComponent : null
+                sourceComponent: loader.sourceComponent === animatedImage ? animationControlsComponent :
+                                 (loader.sourceComponent === video || loader.sourceComponent === audio) ? mediaControlsComponent : null
             }
         }
     }

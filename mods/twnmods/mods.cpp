@@ -8,20 +8,35 @@
     They pull a docker image with the build environment, generate build files and rebuild the mods.
 */
 
+#include <QByteArray>
 #include <QCoreApplication>
+#include <QDateTime>
 #include <QDebug>
+#include <QDir>
+#include <QFileInfo>
+#include <QFuture>
 #include <QProcessEnvironment>
 #include <QRandomGenerator>
 #include <QRegularExpression>
 #include <QSettings>
-#include <QStandardPaths>
+#include <QStringList>
 #include <QThread>
-#include <QtConcurrent>
+#include <Qt>
+#include <QtConcurrentRun>
+#include <QtConfig>
+#include <QtEnvironmentVariables>
+#include <QtLogging>
+#include <QtPreprocessorSupport>
+#include <cstddef>
+#include <cstdlib>
+#include <cstring>
 #include <memory>
+#include <utility>
 
 #include "tweadjustpathsfordocker.h"
 #include "tweerrorcheckutilslibc.h"
 #include "tweexports.h"
+#include "twestandardpaths.h"
 
 #define TW_MAX_MOD_BUILD_OUTPUT_LEN 8192
 
@@ -48,10 +63,10 @@
 #define TW_MOD_PLUGIN "libtwnmodsplugin.so"
 #endif
 
-#if defined(Q_OS_LINUX)
+#ifdef Q_OS_LINUX
 #define TW_PLATFORM "linux"
 #elif defined(Q_OS_MACOS)
-#if defined(Q_PROCESSOR_ARM)
+#ifdef Q_PROCESSOR_ARM
 #define TW_PLATFORM "macos-arm64"
 #else
 #define TW_PLATFORM "macos-x86_64"
@@ -65,7 +80,7 @@
 static QStringList getSrcFiles(const QString &srcDir) {
     QDir        dir(srcDir);
     QStringList filters;
-    filters << "*.c" << "*.cpp";
+    filters << "*.c" << "*.cpp" << "*.h" << "*.hpp"; // QML types from header files won't appear if not set directly.
     return dir.entryList(filters, QDir::Files);
 }
 
@@ -107,7 +122,7 @@ static void writeCmakeFile(
         tplFile.close();
     } else {
         QString sourcesBlock = "";
-        for (const QString &file : files) {
+        for (const QString &file : std::as_const(files)) {
             sourcesBlock += "    " + file + "\n";
         }
 
@@ -221,20 +236,22 @@ thread_local static char modsDirBuffer[PATH_MAX];
 
     The mods directory is the directory that may contain \e twnmods/ and \e twqmods/ directories with the source
     files for native mods and QML mods respectively.
+
+    The main config file that is used when building mods can be overridden using \c TW_MODS_CONFIG_FILE environment
+   variable. This is useful for the first build when there is no possibility to override it with a mod.
 */
 TW_EXPORT const char *twModsGetDir() {
-    QSettings settings;
+    QSettings settings = [] {
+        return qEnvironmentVariableIsSet("TW_MODS_CONFIG_FILE")
+                   ? QSettings(qEnvironmentVariable("TW_MODS_CONFIG_FILE"), QSettings::IniFormat)
+                   : QSettings();
+    }();
     if (!settings.value("mods/enabled", false).toBool()) {
         modsDirBuffer[0] = '\0';
         return modsDirBuffer;
     }
 
-    QString modsDir;
-    if (qEnvironmentVariableIsSet("TW_MODS_DIR")) {
-        modsDir = qEnvironmentVariable("TW_MODS_DIR");
-    } else {
-        modsDir = settings.value("mods/dir", "").toString();
-    }
+    QString modsDir(settings.value("mods/dir", "").toString());
 
     if (modsDir.isEmpty()) {
         modsDirBuffer[0] = '\0';
@@ -254,7 +271,7 @@ static QString adjustPathForDocker(const QString &path, char **err) {
     char *adjusted = tweAdjustPathForDocker(path.toUtf8(), err);
     if (!*err && adjusted) {
         QString result(QString::fromUtf8(adjusted));
-        free(adjusted);
+        free(adjusted); // NOLINT(cppcoreguidelines-no-malloc, hicpp-no-malloc)
         return result;
     }
     return path;
@@ -265,6 +282,9 @@ static QString adjustPathForDocker(const QString &path, char **err) {
     \brief Starts a mods builder.
 
     May fail and set the \a err due to permission or memory errors.
+
+    The cache directory used for building can be overridden using \c TW_MODS_CACHE_DIR environment variable. This is
+   useful for the first build when there is no possibility to override it with a mod.
 
     \sa twModsBuilderDestroy()
 */
@@ -292,7 +312,25 @@ TW_EXPORT TWModsBuilder *twModsBuilderCreate(char **err) {
 
     QProcess *bgProc = &builder->bgProc;
 
-    QString cacheDir(QStandardPaths::standardLocations(QStandardPaths::CacheLocation)[0]);
+    QString cacheDir;
+
+    QString builderDir;
+    QString srcDir;
+    QString dstDir;
+    QString includeDir;
+    QString libDir;
+
+    QDir incl;
+
+    if (qEnvironmentVariableIsSet("TW_MODS_CACHE_DIR")) {
+        cacheDir = qEnvironmentVariable("TW_MODS_CACHE_DIR");
+    } else {
+        char **cacheDirPaths = tweStandardLocations(TW_STANDARD_LOCATION_CACHE, err);
+        EB_GF(!*err);
+        EB_ERR_GF(*cacheDirPaths, "Got no standard path for cache");
+        cacheDir = cacheDirPaths[0];
+    }
+
     builder->builderDir      = cacheDir + "/twnmodsbuilder";
     builder->cachedModsDir   = cacheDir + "/cachedmods";
     builder->builtTWNModsDir = builder->cachedModsDir + "/twnmods";
@@ -300,13 +338,13 @@ TW_EXPORT TWModsBuilder *twModsBuilderCreate(char **err) {
     builder->includeDir = builder->builderDir + "/include";
     builder->libDir     = builder->builderDir + "/lib";
 
-    QString builderDir(builder->builderDir);
-    QString srcDir(builder->srcDir);
-    QString dstDir(builder->builtTWNModsDir);
-    QString includeDir(builder->includeDir);
-    QString libDir(builder->libDir);
+    builderDir = builder->builderDir;
+    srcDir     = builder->srcDir;
+    dstDir     = builder->builtTWNModsDir;
+    includeDir = builder->includeDir;
+    libDir     = builder->libDir;
 
-    QDir incl(includeDir);
+    incl = includeDir;
     EB_ERR_GF(incl.exists() || incl.mkpath("."), "Failed to create include directory");
 
 #ifdef _WIN32
@@ -369,8 +407,9 @@ static QDateTime calcLatestInputModifiedTime(const QString &srcDir, const QStrin
     };
 
     QStringList files = getSrcFiles(srcDir);
-    QDir        srcQDir(srcDir);
-    for (const QString &file : files) {
+    files.push_back(srcDir + "/CMakeLists.txt");
+    QDir srcQDir(srcDir);
+    for (const QString &file : std::as_const(files)) {
         assignMaxLatestInputModifiedTime(srcQDir.filePath(file));
     }
 
@@ -382,6 +421,8 @@ static QDateTime calcLatestInputModifiedTime(const QString &srcDir, const QStrin
 
 #ifdef _WIN32
     assignMaxLatestInputModifiedTime(QDir(libDir).filePath(TW_ILIB));
+#else
+    Q_UNUSED(libDir);
 #endif
 
     return latestInputModifiedTime;
@@ -449,7 +490,6 @@ upToDate(const QString &srcDir, const QString &includeDir, const QString &libDir
 static void buildCopyForCurrentPlatform(TWModsBuilder *builder, char **err) {
     QString builderDir(builder->builderDir);
     QString srcDir(builder->srcDir);
-    QString dstDir(builder->builtTWNModsDir);
     QString includeDir(builder->includeDir);
     QString libDir(builder->libDir);
 

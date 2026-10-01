@@ -1,3 +1,39 @@
+# 1.2.0-alpha
+
+## Added
+
+- Tag aliases, disambiguations and display titles.
+- Search field for picking a tag by its title or alias.
+- Context menu command to select tags of an entry.
+- Enabled sound in the videos, volume setting.
+- Audio files support, cover art.
+- Modding API for overriding standard paths for the portable mode mod.
+- More detailed descriptions in the modding documentation.
+
+## Build
+
+- Building FFmpeg from source.
+- Tracy profiler.
+- More robust Windows DLL list.
+
+## Fixed
+
+- Quotes, spaces and backslashes.
+- File grid PointerOver crash when entering a dir because of querying before calling EndLayout().
+- Crash because of passing tag library ids out of order to search framework for table creation.
+- Do not lose tab when opening tab with another dir.
+- Do not lose file selection after a tag library change hiding files.
+- Try to keep selection after tag library change.
+- Correct use of extensions arrays by isPreviwable().
+- Implemented "show tag and entries ids" debug option for clay widgets.
+- Command-line option to enable legacy views.
+- Don't fail consistency check if a root dir is not present.
+- No trying to store the cache of a root that didn't load because the dir didn't exist.
+- Cache load with unmatched tags.
+- QML import path now prefers the cache dir with built native mods first instead of the source dir.
+- Mod builder rebuilds when a source file is removed.
+- Mod builder builds C++ QML types correctly by adding their headers to the build.
+
 # 1.1.0-alpha
 
 ## Added

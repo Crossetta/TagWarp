@@ -8,6 +8,8 @@
 #include <QString>
 #include <QStringList>
 #include <QTextStream>
+#include <QtLogging>
+#include <utility>
 
 /*!
     \brief Utility functions for qmldir.
@@ -51,7 +53,7 @@ TW_EXPORT void twModsFillInQmldir(const char *path) {
     if (inFile.open(QIODevice::ReadOnly | QIODevice::Text)) {
         QTextStream in(&inFile);
 
-        QRegularExpression re(R"(^\s*([A-Za-z_][A-Za-z0-9_]*)\s+([0-9]+\.[0-9]+)\s+(.+\.qml)\s*$)");
+        static QRegularExpression re(R"(^\s*([A-Za-z_][A-Za-z0-9_]*)\s+([0-9]+\.[0-9]+)\s+(.+\.qml)\s*$)");
 
         while (!in.atEnd()) {
             QString line = in.readLine();

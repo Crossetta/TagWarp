@@ -12,6 +12,8 @@ import twnmods 1.0
 /*!
     \qmltype GeneralSettings
     \brief General settings tab.
+
+    Used in the settings window.
 */
 ColumnLayout {
     id: root
@@ -24,16 +26,29 @@ ColumnLayout {
 
     spacing: 0
 
-    Row {
+    GridLayout {
         Layout.fillWidth: true
         Layout.fillHeight: true
         Layout.alignment: Qt.AlignTop
+
+        columns: 2
 
         Label { text: qsTr("Show hidden files:") }
         CheckBox {
             id: showHiddenEntriesCheckBox
             checked: GlobalState.showHiddenEntries
         }
+
+        Label { text: qsTr("Default audio volume:") }
+        Slider {
+            id: defaultAudioVolumeSlider
+            value: GlobalState.defaultAudioVolume
+        }
+    }
+
+    Item {
+        Layout.fillWidth: true
+        Layout.fillHeight: true
     }
 
     RowLayout {
@@ -49,9 +64,10 @@ ColumnLayout {
         Button {
             id: applyButton
             text: qsTr("Apply")
-            enabled: GlobalState.showHiddenEntries != showHiddenEntriesCheckBox.checked
+            enabled: GlobalState.showHiddenEntries !== showHiddenEntriesCheckBox.checked || GlobalState.defaultAudioVolume !== defaultAudioVolumeSlider.value
             onClicked: {
                 GlobalState.showHiddenEntries = showHiddenEntriesCheckBox.checked;
+                GlobalState.defaultAudioVolume = defaultAudioVolumeSlider.value;
             }
         }
         Button {
@@ -59,6 +75,7 @@ ColumnLayout {
             enabled: applyButton.enabled
             onClicked: {
                 showHiddenEntriesCheckBox.checked = GlobalState.showHiddenEntries;
+                defaultAudioVolumeSlider.value = GlobalState.defaultAudioVolume;
             }
         }
         Button {
@@ -75,7 +92,7 @@ ColumnLayout {
     }
 
     Keys.onPressed: (event)=> {
-        if (event.key == Qt.Key_Escape) {
+        if (event.key === Qt.Key_Escape) {
             if (!applyButton.enabled) {
                 root.close();
             }

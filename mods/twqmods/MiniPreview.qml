@@ -2,6 +2,7 @@
 
 import QtMultimedia
 import QtQuick
+import QtQuick.Controls
 import QtQuick.VectorImage
 
 import com.TagWarp.Manager 1.0
@@ -28,11 +29,13 @@ Item {
     readonly property bool isSvg: previewable.isSvg(root.source)
     readonly property bool isGif: previewable.isGif(root.source)
     readonly property bool isVideo: previewable.isVideo(root.source)
+    readonly property bool isAudio: previewable.isAudio(root.source)
 
     // Separate sources to not get a warning when going between different types.
     property url svgSource: isSvg ? source : ""
     property url gifSource: isGif ? source : ""
     property url videoSource: isVideo ? source : ""
+    property url audioSource: isAudio ? source : ""
     property url rasterSource: isSvg || isGif || isVideo ? "" : source
 
     Previewable {
@@ -40,6 +43,8 @@ Item {
     }
 
     Loader {
+        id: loader
+
         anchors.fill: parent
         anchors.margins: 4
 
@@ -140,11 +145,31 @@ Item {
 
             VideoOutput {
                 id: videoOutput
+                property string source: root.videoSource // So the fallback icon doesn't appear.
                 MediaPlayer {
                     source: root.videoSource
                     videoOutput: videoOutput
                     autoPlay: true
                     loops: MediaPlayer.Infinite
+                }
+            }
+        }
+
+        Component {
+            id: audio
+
+            Image {
+                id: audioCoverArt
+
+                property MediaPlayer player: MediaPlayer {
+                    source: root.audioSource
+                }
+
+                source: {
+                    if (!player || !player.metaData) {
+                        return "";
+                    }
+                    return ImageFuncs.toDataUri(player.metaData.value(MediaMetaData.CoverArtImage) || player.metaData.value(MediaMetaData.ThumbnailImage));
                 }
             }
         }
@@ -155,8 +180,20 @@ Item {
             return animatedImage;
         } else if (root.isVideo) {
             return video;
+        } else if (root.isAudio) {
+           return audio;
         } else {
             return rasterImage;
         }
+    }
+
+    ToolButton {
+        visible: root.source.toString() !== "" && loader.item?.source.toString() === ""
+        anchors.centerIn: parent
+        icon.width: 50
+        icon.height: 50
+        icon.source: Themed.getIcon(root, "audio-x-generic")
+        display: AbstractButton.IconOnly
+        background: null
     }
 }

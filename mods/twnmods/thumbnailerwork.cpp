@@ -14,25 +14,40 @@
 #include <QImageReader>
 #include <QMediaMetaData>
 #include <QMediaPlayer>
+#include <QObject>
 #include <QStringList>
 #include <QTemporaryFile>
 #include <QTimer>
+#include <QUrl>
 #include <QVideoFrame>
 #include <QVideoSink>
+#include <Qt>
+#include <QtConfig>
+#include <QtLogging>
+#include <QtPreprocessorSupport>
+#include <QtTypes>
+#include <algorithm>
+#include <cstddef>
+#include <cstdint>
+#include <cstring>
 #include <memory>
 #include <utility>
 
 #include "tweerrorcheckutilslibc.h"
 #include "twemeta.h"
 #include "twestrmap.h"
+#include "tweutils.h"
 
-static const int   VID_TIMEOUT_MSEC = 3000;
-static const qreal VID_DEFAULT_FPS  = 30.0;
+static const int   PLAYER_TIMEOUT_MSEC = 3000; // Will freeze for that amount of time on video files without video.
+static const qreal VID_DEFAULT_FPS     = 30.0;
 
+// NOLINTBEGIN(clazy-non-pod-global-static, bugprone-throwing-static-initialization, cert-err58-cpp)
 static const QStringList IMAGES     = {".jpg", ".jpeg", ".png", ".svg", ".webp"};
 static const QStringList ANIMATIONS = {".gif"};
 static const QStringList VIDEOS     = {
-    ".avi", ".flv", ".mkv", ".mov", "m4v", "mp4", "mpeg", ".ts", ".vob", ".webm", ".wmv"};
+    ".avi", ".flv", ".mkv", ".mov", ".m4v", ".mp4", ".mpeg", ".ts", ".vob", ".webm", ".wmv"};
+static const QStringList AUDIOS = {".aac", ".aiff", ".alac", ".flac", ".m4a", ".mp3", ".ogg", ".opus", ".wav", ".wma"};
+// NOLINTEND(clazy-non-pod-global-static, bugprone-throwing-static-initialization, cert-err58-cpp)
 
 /*!
     \fn bool twThumbnailable(char *basename, char **err)
@@ -41,6 +56,7 @@ static const QStringList VIDEOS     = {
     May fail and set the \a err.
 */
 extern "C" TW_EXPORT bool twThumbnailable(char *basename, char **err) {
+    Q_UNUSED(err);
     size_t len = strlen(basename);
     for (const QString &extension : IMAGES) {
         if (len >= extension.size() && extension.compare(&basename[len - extension.size()], Qt::CaseInsensitive) == 0) {
@@ -52,7 +68,12 @@ extern "C" TW_EXPORT bool twThumbnailable(char *basename, char **err) {
             return true;
         }
     }
-    for (const QString &extension : ANIMATIONS) {
+    for (const QString &extension : ANIMATIONS) { // NOLINT(readability-use-anyofallof)
+        if (len >= extension.size() && extension.compare(&basename[len - extension.size()], Qt::CaseInsensitive) == 0) {
+            return true;
+        }
+    }
+    for (const QString &extension : AUDIOS) { // NOLINT(readability-use-anyofallof)
         if (len >= extension.size() && extension.compare(&basename[len - extension.size()], Qt::CaseInsensitive) == 0) {
             return true;
         }
@@ -62,12 +83,9 @@ extern "C" TW_EXPORT bool twThumbnailable(char *basename, char **err) {
 }
 
 static bool isOfType(const QString &path, const QStringList &exts) {
-    for (const QString &extension : exts) {
-        if (path.endsWith(extension, Qt::CaseInsensitive)) {
-            return true;
-        }
-    }
-    return false;
+    return std::any_of(exts.cbegin(), exts.cend(), [&path](const QString &extension) {
+        return path.endsWith(extension, Qt::CaseInsensitive);
+    });
 }
 
 static std::pair<bool, QImage> ensureThumbnail(
@@ -95,12 +113,12 @@ static std::pair<bool, QImage> ensureThumbnail(
     if (isOfType(path, IMAGES)) {
         image.load(path);
     } else if (isOfType(path, VIDEOS)) {
-        TWStrMap *m;
+        TWStrMap *m; // NOLINT(cppcoreguidelines-init-variables)
         tweMetaGetForEntry(id, locationId, &m, err);
         EB_GF(!*err);
 
-        void        *v;
-        TWStrMapType t;
+        void        *v; // NOLINT(cppcoreguidelines-init-variables)
+        TWStrMapType t; // NOLINT(cppcoreguidelines-init-variables)
         intptr_t frame = tweStrMapGet(m, "frameNumForThumb", &v, &t, err) && t == TW_STR_MAP_TYPE_INT ? (intptr_t)v : 0;
         EB_GF(!*err);
 
@@ -112,7 +130,7 @@ static std::pair<bool, QImage> ensureThumbnail(
         QEventLoop loop;
         bool       frameCaptured = false;
 
-        QObject::connect(&player, &QMediaPlayer::mediaStatusChanged, [&](QMediaPlayer::MediaStatus status) {
+        QObject::connect(&player, &QMediaPlayer::mediaStatusChanged, &loop, [&](QMediaPlayer::MediaStatus status) {
             if (status == QMediaPlayer::LoadedMedia) {
                 QVariant fpsVar = player.metaData().value(QMediaMetaData::VideoFrameRate);
                 qreal    fps    = fpsVar.isValid() ? fpsVar.toReal() : VID_DEFAULT_FPS;
@@ -128,7 +146,7 @@ static std::pair<bool, QImage> ensureThumbnail(
             }
         });
 
-        QObject::connect(&sink, &QVideoSink::videoFrameChanged, [&](const QVideoFrame &videoFrame) {
+        QObject::connect(&sink, &QVideoSink::videoFrameChanged, &loop, [&](const QVideoFrame &videoFrame) {
             if (videoFrame.isValid() && !frameCaptured) {
                 image         = videoFrame.toImage();
                 frameCaptured = true;
@@ -139,7 +157,7 @@ static std::pair<bool, QImage> ensureThumbnail(
         QTimer timeoutTimer;
         timeoutTimer.setSingleShot(true);
         QObject::connect(&timeoutTimer, &QTimer::timeout, &loop, &QEventLoop::quit);
-        timeoutTimer.start(VID_TIMEOUT_MSEC);
+        timeoutTimer.start(PLAYER_TIMEOUT_MSEC);
 
         player.pause();
         loop.exec();
@@ -150,12 +168,12 @@ static std::pair<bool, QImage> ensureThumbnail(
     } else if (isOfType(path, ANIMATIONS)) {
         QImageReader imageLoader(path);
 
-        TWStrMap *m;
+        TWStrMap *m; // NOLINT(cppcoreguidelines-init-variables)
         tweMetaGetForEntry(id, locationId, &m, err);
         EB_GF(!*err);
 
-        void        *v;
-        TWStrMapType t;
+        void        *v; // NOLINT(cppcoreguidelines-init-variables)
+        TWStrMapType t; // NOLINT(cppcoreguidelines-init-variables)
 
         intptr_t frame = tweStrMapGet(m, "frameNumForThumb", &v, &t, err) && t == TW_STR_MAP_TYPE_INT ? (intptr_t)v : 0;
         EB_GF(!*err);
@@ -166,6 +184,45 @@ static std::pair<bool, QImage> ensureThumbnail(
         }
 
         if (f != frame) {
+            image = QImage();
+        }
+    } else if (isOfType(path, AUDIOS)) {
+        QMediaPlayer player;
+        player.setSource(QUrl::fromLocalFile(path));
+
+        QEventLoop loop;
+        bool       artCaptured = false;
+
+        QObject::connect(&player, &QMediaPlayer::mediaStatusChanged, &loop, [&](QMediaPlayer::MediaStatus status) {
+            Q_UNUSED(status); // On Windows can get art even with the InvalidMedia status.
+
+            QMediaMetaData metaData = player.metaData();
+
+            QVariant coverVariant = metaData.value(QMediaMetaData::CoverArtImage);
+
+#if QT_VERSION_MAJOR <= 6 && QT_VERSION_MINOR <= 11
+            if (!coverVariant.isValid() || coverVariant.isNull()) {
+                coverVariant = metaData.value(QMediaMetaData::ThumbnailImage);
+            }
+#endif
+
+            image = tweQImageFromQVariant(coverVariant); // Directly using QVariant breaks hot reload.
+            if (!image.isNull()) {
+                artCaptured = true;
+            }
+
+            loop.quit();
+        });
+
+        QTimer timeoutTimer;
+        timeoutTimer.setSingleShot(true);
+        QObject::connect(&timeoutTimer, &QTimer::timeout, &loop, &QEventLoop::quit);
+        timeoutTimer.start(PLAYER_TIMEOUT_MSEC);
+
+        player.pause();
+        loop.exec();
+
+        if (!artCaptured) {
             image = QImage();
         }
     } else {
@@ -235,6 +292,8 @@ extern "C" TW_EXPORT bool twThumbnailEnsureUpToDate(
     char      **recoverableErr,
     char      **err) {
 
+    Q_UNUSED(recoverableErr);
+
     return ensureThumbnail(id, locationId, path, thumbnailDir, thumbnailName, QSize(thumbWidth, thumbHeight), err)
         .first;
 }
@@ -261,7 +320,7 @@ extern "C" TW_EXPORT bool twThumbnailEnsureUpToDate(
 
     May fail and set the \a err or \a recoverableErr.
 */
-TW_EXPORT QImage twThumbnailGetQImage(
+extern TW_EXPORT QImage twThumbnailGetQImage(
     uint64_t       id,
     uint64_t       locationId,
     const QString &path,
@@ -271,6 +330,8 @@ TW_EXPORT QImage twThumbnailGetQImage(
     char         **recoverableErr,
     char         **err) {
 
+    Q_UNUSED(recoverableErr);
+
     auto [exists, image] = ensureThumbnail(id, locationId, path, thumbnailDir, thumbnailName, thumbSize, err);
     EB_GF(!*err);
 
@@ -278,7 +339,7 @@ TW_EXPORT QImage twThumbnailGetQImage(
         QImage thumbnail(thumbnailDir + thumbnailName);
         if (thumbnail.isNull()) {
             qWarning() << "Failed to load a thumbnail";
-            return QImage();
+            return {};
         }
         image = thumbnail.scaled(thumbSize, Qt::KeepAspectRatio, Qt::SmoothTransformation);
     }
@@ -286,7 +347,7 @@ TW_EXPORT QImage twThumbnailGetQImage(
     return image.convertToFormat(QImage::Format_RGBA8888_Premultiplied);
 
 fail:
-    return QImage();
+    return {};
 }
 
 /*!
@@ -312,7 +373,7 @@ fail:
 
     \a thumbWidthInOut and \a thumbHeightInOut are the bounding box dimensions. The resulting dimensions are returned.
 
-    \a data is raw data in \e Format_RGBA8888_Premultiplied. The \a cleanupInfo is for the use with
+    \a data is raw data in \c Format_RGBA8888_Premultiplied. The \a cleanupInfo is for the use with
    twThumbnailFreeImageData().
 
     Used if twThumbnailGetQImage() is not provided.
