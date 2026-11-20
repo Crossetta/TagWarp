@@ -24,6 +24,28 @@ ColumnLayout {
     */
     signal close
 
+    /*!
+        \qmlproperty bool GeneralSettings::hasUnapplied
+        \brief \c true if there are unapplied settings.
+    */
+    readonly property bool hasUnapplied: applyButton.enabled
+
+    /*!
+        \qmlmethod GeneralSettings::apply()
+        \brief Applies unapplied settings.
+    */
+    function apply() {
+        applyButton.click();
+    }
+
+    /*!
+        \qmlmethod GeneralSettings::revert()
+        \brief Reverts unapplied settings.
+    */
+    function revert() {
+        revertButton.click();
+    }
+
     spacing: 0
 
     GridLayout {
@@ -71,6 +93,7 @@ ColumnLayout {
             }
         }
         Button {
+            id: revertButton
             text: qsTr("Revert")
             enabled: applyButton.enabled
             onClicked: {

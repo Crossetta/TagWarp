@@ -83,6 +83,10 @@ ShortcutsWithAltDetectionAndText {
             sequences: ["Ctrl+Shift+N"]
         },
         {
+            action: window.actionSelectAll,
+            sequences: [StandardKey.SelectAll]
+        },
+        {
             action: window.actionFind,
             sequences: [StandardKey.Find]
         },

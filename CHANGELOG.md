@@ -1,3 +1,19 @@
+# 1.2.1-alpha
+
+## Fixed
+
+- Added "Select All" action.
+- Preview: double click to toggle fullscreen, toolbutton to close, click or spacebar to pause/resume, change volume with mouse wheel.
+- Dragging a file or a tag now scrolls the view.
+- Now scrolls to previously selected entry when navigating.
+- Fix selecting files with Shift and arrows.
+- Shift box select adds to the selection correctly.
+- File name in preview title.
+- File name near MiniPreview.
+- Full path tooltips for the tabs.
+- Correct tab titles and tooltips in search and roots views.
+- Alert if there are unsaved settings in the settings window.
+
 # 1.2.0-alpha
 
 ## Added

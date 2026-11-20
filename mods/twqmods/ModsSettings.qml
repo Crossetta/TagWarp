@@ -25,6 +25,28 @@ ColumnLayout {
     */
     signal close
 
+    /*!
+        \qmlproperty bool ModsSettings::hasUnapplied
+        \brief \c true if there are unapplied settings.
+    */
+    readonly property bool hasUnapplied: applyButton.enabled
+
+    /*!
+        \qmlmethod ModsSettings::apply()
+        \brief Applies unapplied settings.
+    */
+    function apply() {
+        applyButton.click();
+    }
+
+    /*!
+        \qmlmethod ModsSettings::revert()
+        \brief Reverts unapplied settings.
+    */
+    function revert() {
+        revertButton.click();
+    }
+
     spacing: 0
 
     GroupBox {
@@ -106,6 +128,7 @@ ColumnLayout {
             }
         }
         Button {
+            id: revertButton
             text: qsTr("Revert")
             enabled: applyButton.enabled
             onClicked: {

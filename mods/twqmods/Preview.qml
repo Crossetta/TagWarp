@@ -27,10 +27,22 @@ Rectangle {
     property url entryUrl
 
     /*!
+        \qmlproperty bool Preview::closeButtonVisible
+        \brief Property to control the visibility of the close button on the top right.
+    */
+    property alias closeButtonVisible: closeButton.visible
+
+    /*!
         \qmlsignal Preview::doubleClicked
         \brief Used by the parent window to hide the preview.
     */
     signal doubleClicked()
+
+    /*!
+        \qmlsignal Preview::close
+        \brief Triggered when the user clicks the close button.
+    */
+    signal close()
 
     /*!
         \qmlsignal Preview::setMeta(string key, var value)
@@ -67,7 +79,31 @@ Rectangle {
         return minStr + ":" + secStr;
     }
 
+    function togglePlayback() {
+        const player = loader.item?.player ?? null;
+        if (player) {
+            const isPlaying = player.playbackState === MediaPlayer.PlayingState;
+            if (isPlaying) {
+                player.pause();
+                loader.saveMediaCtlsToTransformCache(undefined, player.position, true);
+            } else {
+                player.play();
+                loader.saveMediaCtlsToTransformCache(undefined, undefined, false);
+            }
+
+            // Flash the state icon in the center.
+            playPauseFeedback.sourceName = isPlaying ? "media-playback-pause" : "media-playback-start";
+            playbackFeedbackAnim.restart();
+        }
+    }
+
     color: root.palette.window
+
+    focus: true
+    Keys.onSpacePressed: (event) => {
+        togglePlayback();
+        event.accepted = true;
+    }
 
     property url source: previewable.isPreviewable(entryUrl) ? entryUrl : ""
     property bool isSvg: previewable.isSvg(source)
@@ -97,6 +133,31 @@ Rectangle {
         drag.maximumY: Math.max(root.height - loader.item?.height * loader.item?.scale, 0)
 
         onDoubleClicked: (mouse)=> { root.doubleClicked(); }
+
+        onClicked: (mouse) => { root.togglePlayback(); }
+    }
+
+    MouseArea {
+        anchors.fill: parent
+        acceptedButtons: Qt.NoButton
+
+        onWheel: (wheel)=> {
+            const oldZoom = Math.min(root.width / loader.item.width, root.height / loader.item.height) + loader.zoom;
+
+            if (wheel.angleDelta.y > 0) {
+                loader.zoom = Number((loader.zoom + .1).toFixed(1));
+            } else if (loader.zoom > 0) {
+                loader.zoom = Number((loader.zoom - .1).toFixed(1));
+            }
+
+            const newZoom = Math.min(root.width / loader.item.width, root.height / loader.item.height) + loader.zoom;
+
+            const imgX = (wheel.x - loader.item.x) / oldZoom;
+            const imgY = (wheel.y - loader.item.y) / oldZoom;
+
+            loader.item.x = wheel.x - imgX * newZoom;
+            loader.item.y = wheel.y - imgY * newZoom;
+        }
     }
 
     Loader {
@@ -129,12 +190,12 @@ Rectangle {
         Connections { // Center it when the window is resized and the image is small.
             target: root
             function onWidthChanged() {
-                if (loader.item && root.width > loader.item.width * loader.item.scale) {
+                if (loader.item && root.width >= loader.item.width * loader.item.scale) {
                     loader.item.x = (root.width - loader.item.width * loader.item.scale) / 2;
                 }
             }
             function onHeightChanged() {
-                if (loader.item && root.height > loader.item.height * loader.item.scale) {
+                if (loader.item && root.height >= loader.item.height * loader.item.scale) {
                     loader.item.y = (root.height - loader.item.height * loader.item.scale) / 2;
                 }
             }
@@ -149,6 +210,16 @@ Rectangle {
 
             function onYChanged() {
                 loader.saveGeometryToTransformCache();
+            }
+
+            // Important for the fullscreen transition.
+            function onScaleChanged() {
+                if (root.width >= loader.item.width * loader.item.scale) {
+                    loader.item.x = (root.width - loader.item.width * loader.item.scale) / 2;
+                }
+                if (root.height >= loader.item.height * loader.item.scale) {
+                    loader.item.y = (root.height - loader.item.height * loader.item.scale) / 2;
+                }
             }
         }
 
@@ -406,6 +477,33 @@ Rectangle {
         source: Themed.getIcon(root, "audio-x-generic")
     }
 
+    Rectangle {
+        id: playPauseFeedback
+
+        anchors.centerIn: parent
+        width: mediaControlsPanel.iconSize * 1.7
+        height: mediaControlsPanel.iconSize * 1.7
+        radius: mediaControlsPanel.iconSize * 1.7 / 2
+        color: Qt.rgba(0, 0, 0, 0.6)
+        opacity: 0.0
+
+        property string sourceName: "media-playback-start"
+
+        VectorImage {
+            anchors.centerIn: parent
+            width: mediaControlsPanel.iconSize
+            height: mediaControlsPanel.iconSize
+            source: Themed.getIcon(root, playPauseFeedback.sourceName)
+        }
+
+        SequentialAnimation {
+            id: playbackFeedbackAnim
+            PropertyAction { target: playPauseFeedback; property: "opacity"; value: 1.0 }
+            PauseAnimation { duration: 100 }
+            NumberAnimation { target: playPauseFeedback; property: "opacity"; to: 0.0; duration: 250; easing.type: Easing.OutQuad }
+        }
+    }
+
     Item {
         anchors.bottom: parent.bottom
         anchors.left: parent.left
@@ -594,6 +692,7 @@ Rectangle {
                                 id: volumeSlider
                                 width: 100
                                 anchors.verticalCenter: parent.verticalCenter
+                                wheelEnabled: true
                                 value: mediaControlsRoot.player && mediaControlsRoot.player.audioOutput ? mediaControlsRoot.player.audioOutput.volume : GlobalState.defaultAudioVolume // Not necessairly the initial value. It may be set in the cache load.
                                 onMoved: {
                                     if (mediaControlsRoot.player && mediaControlsRoot.player.audioOutput) {
@@ -649,13 +748,7 @@ Rectangle {
                             ToolTip.text: qsTr(mediaControls.visible && isPlaying ? "Pause" : "Play")
                             ToolTip.delay: 500
                             onClicked: {
-                                if (isPlaying) {
-                                    mediaControlsRoot.player.pause()
-                                    loader.saveMediaCtlsToTransformCache(undefined, mediaControlsRoot.player.position, true)
-                                } else {
-                                    mediaControlsRoot.player.play()
-                                    loader.saveMediaCtlsToTransformCache(undefined, undefined, false)
-                                }
+                                root.togglePlayback();
                             }
                         }
 
@@ -715,6 +808,7 @@ Rectangle {
             }
 
             Loader {
+                id: mediaControlsLoader
                 anchors.fill: parent
                 sourceComponent: loader.sourceComponent === animatedImage ? animationControlsComponent :
                                  (loader.sourceComponent === video || loader.sourceComponent === audio) ? mediaControlsComponent : null
@@ -722,26 +816,30 @@ Rectangle {
         }
     }
 
-    MouseArea {
-        anchors.fill: parent
-        acceptedButtons: Qt.NoButton
+    // Top-right Close ToolButton.
+    ToolButton {
+        id: closeButton
 
-        onWheel: (wheel)=> {
-            const oldZoom = Math.min(root.width / loader.item.width, root.height / loader.item.height) + loader.zoom;
+        anchors.top: parent.top
+        anchors.right: parent.right
+        anchors.margins: 12
 
-            if (wheel.angleDelta.y > 0) {
-                loader.zoom = Number((loader.zoom + .1).toFixed(1));
-            } else if (loader.zoom > 0) {
-                loader.zoom = Number((loader.zoom - .1).toFixed(1));
-            }
+        width: mediaControlsPanel.iconSize
+        height: mediaControlsPanel.iconSize
 
-            const newZoom = Math.min(root.width / loader.item.width, root.height / loader.item.height) + loader.zoom;
+        icon.source: Themed.getIcon(root, "window-close")
+        ToolTip.visible: hovered
+        ToolTip.text: qsTr("Close")
+        ToolTip.delay: 500
+        display: AbstractButton.IconOnly
 
-            const imgX = (wheel.x - loader.item.x) / oldZoom;
-            const imgY = (wheel.y - loader.item.y) / oldZoom;
+        onClicked: root.close()
 
-            loader.item.x = wheel.x - imgX * newZoom;
-            loader.item.y = wheel.y - imgY * newZoom;
+        opacity: hovered || mediaControlsLoader.sourceComponent && mediaControlsHover.hovered ? 1.0 : 0.0
+        enabled: opacity > 0.0
+
+        Behavior on opacity {
+            NumberAnimation { duration: 200; easing.type: Easing.OutQuad }
         }
     }
 }
