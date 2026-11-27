@@ -27,6 +27,12 @@ Rectangle {
     property url entryUrl
 
     /*!
+        \qmlproperty url Preview::entryIsDir
+        \brief Is \c true if the previewed entry is a directory.
+    */
+    property bool entryIsDir
+
+    /*!
         \qmlproperty bool Preview::closeButtonVisible
         \brief Property to control the visibility of the close button on the top right.
     */
@@ -122,6 +128,16 @@ Rectangle {
         id: previewable
     }
 
+    ToolButton {
+        visible: loader.item?.source.toString() === ""
+        anchors.centerIn: parent
+        icon.width: mediaControlsPanel.iconSize * 4
+        icon.height: mediaControlsPanel.iconSize * 4
+        icon.source: Themed.getIcon(root, root.isAudio ? "audio-x-generic" : root.entryIsDir ? "folder" : "application-x-zerosize")
+        display: AbstractButton.IconOnly
+        background: null
+    }
+
     MouseArea {
         anchors.fill: parent
 
@@ -132,9 +148,19 @@ Rectangle {
         drag.minimumY: Math.min(root.height - loader.item?.height * loader.item?.scale, 0)
         drag.maximumY: Math.max(root.height - loader.item?.height * loader.item?.scale, 0)
 
-        onDoubleClicked: (mouse)=> { root.doubleClicked(); }
+        onDoubleClicked: (mouse)=> {
+            clickTimer.stop();
+            root.doubleClicked();
+        }
 
-        onClicked: (mouse) => { root.togglePlayback(); }
+        onClicked: (mouse) => { clickTimer.restart(); }
+
+        Timer {
+            id: clickTimer
+            interval: 250
+            repeat: false
+            onTriggered: root.togglePlayback()
+        }
     }
 
     MouseArea {
@@ -467,14 +493,6 @@ Rectangle {
         } else {
             return rasterImage;
         }
-    }
-
-    VectorImage {
-        visible: loader.item?.source.toString() === ""
-        anchors.centerIn: parent
-        width: mediaControlsPanel.iconSize * 4
-        height: mediaControlsPanel.iconSize * 4
-        source: Themed.getIcon(root, "audio-x-generic")
     }
 
     Rectangle {

@@ -25,6 +25,13 @@ Item {
         \brief Path to the file to preview.
     */
     property url entryUrl
+
+    /*!
+        \qmlproperty url MiniPreview::entryIsDir
+        \brief Is \c true if the previewed entry is a directory.
+    */
+    property bool entryIsDir
+
     readonly property url source: previewable.isPreviewable(root.entryUrl) ? root.entryUrl : ""
     readonly property bool isSvg: previewable.isSvg(root.source)
     readonly property bool isGif: previewable.isGif(root.source)
@@ -188,11 +195,11 @@ Item {
     }
 
     ToolButton {
-        visible: root.source.toString() !== "" && loader.item?.source.toString() === ""
+        visible: loader.item?.source.toString() === ""
         anchors.centerIn: parent
         icon.width: 50
         icon.height: 50
-        icon.source: Themed.getIcon(root, "audio-x-generic")
+        icon.source: Themed.getIcon(root, root.isAudio ? "audio-x-generic" : root.entryIsDir ? "folder" : "application-x-zerosize")
         display: AbstractButton.IconOnly
         background: null
     }

@@ -1,3 +1,25 @@
+# 1.3.0-alpha
+
+## Added
+
+- Compilations - groups/collections/sets/sequences (for comics, albums, image/page sequences).
+- Traverse the contents of the compilations when encountered in Preview.
+- Buttons or mouse wheel to browse compilation contents in MiniPreview.
+- Compilation-related tag properties and a built-in "compilation" tag that can be applied from the context menu.
+
+## Fixed
+
+- Tag selection loss when editing uncategorized tags.
+- Removed "Remove from Category" option for uncategorized tags.
+- Versioning for tag libraries caches and entries caches.
+- Adding tag to categorized tags model silent failure because of the function call parameters mismatch.
+- Fix saving tag text colors.
+- Close context menu after adding tag from an entry to a library.
+- Icons for non-previewable in Preview and MiniPreview.
+- Prevent double click in Preview from pausing/resuming the video.
+- Prevent "Collapse Tag Libraries" button click-through.
+- On fresh start, don't double-init the default tag library, create dir for cache.
+
 # 1.2.1-alpha
 
 ## Fixed

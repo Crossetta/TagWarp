@@ -31,6 +31,7 @@ Insider Alpha. Discuss in Discord threads, GitHub Discussions and GitHub Issues.
 - Parent tags, categories, disambiguation, aliases.
 - Search by tags and file names.
 - Picking tags by their titles or aliases.
+- Compilations - groups/collections/sets/sequences (for comics, albums, image/page sequences).
 - Usual file operations like in a file manager.
 - Fullscreen preview.
 - Multiple tag libraries.
